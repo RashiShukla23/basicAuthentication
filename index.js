@@ -1,10 +1,12 @@
 import express from "express";
 import bodyParser from "body-parser";
 import pg from "pg";
+import bycrpt from "bcrypt";
 
 
 const app = express();
 const port = 3000;
+const saltRounds = 10;
 
 const db = new pg.Client({
   user: "postgres",
@@ -41,12 +43,20 @@ app.post("/register", async (req, res) => {
       res.send("Email already exists Please enter another email");
     }
     else{
-      const result = await db.query(
-      "INSERT INTO users (email,password) VALUES ($1,$2) RETURNING* ", [email,password]);
-      console.log(result);
-      res.render("secrets.ejs");
+      //password Hashing
+      bycrpt.hash(password, saltRounds, async(err, hash)=>{
+        if(err){
+          console.log("Error hashing the password: ",err);
+        }
+        else{
+        const result = await db.query(
+        "INSERT INTO users (email,password) VALUES ($1,$2) RETURNING* ", [email,hash]);
+        console.log(result);
+        res.render("secrets.ejs");
+        }
+      }); 
     }
-    
+
   }catch (err) {
     console.error(err);
     res.send("somthing went wrong");
@@ -57,21 +67,26 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
   
   const email = req.body.username;
-  const password = req.body.password;
+  const loginPassword = req.body.password;
 
   try {
     const result = await db.query("SELECT * FROM users WHERE email = $1", [email]);
 
     if(result.rows.length>0){
       const user = result.rows[0];
-      const storedPassword = user.password;
+      const storedHashPassword = user.password;
 
-      if(storedPassword === password){
-        res.render("secrets.ejs");
-      }else{
-        res.send("Password Incorrect");
-      }
-
+      bycrpt.compare(loginPassword, storedHashPassword, (err, result)=>{
+        if(err){
+          console.log("Error comapring passwords:",err);
+        }else{
+          if(result){
+            res.render("secrets.ejs");
+          }else{
+            res.send("Incorrect password");
+          } 
+        }
+    });
     }
     else{
       res.send("User not Found");
